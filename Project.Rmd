@@ -1,0 +1,78 @@
+Title: Project
+Dataset: ETF
+
+```{r}
+library(readr)
+library(psych)
+library(dplyr)
+library(tidyverse)
+library(forcats)
+library(corrplot)
+library('rsample')
+library('glmnet')
+library('glmnetUtils')
+library('broom')
+```
+
+```{r}
+etf = read.csv("Project/ETFs.csv", stringsAsFactors = TRUE)
+
+head(etf)
+glimpse(etf)
+options(scipen = 11)
+str(etf)
+colnames(etf)
+```
+
+
+```{r}
+#cleaning
+etf_clean1 = etf %>% drop_na(ytd_return)  %>% mutate(investment_grade = rating_aaa + rating_aa + rating_a + rating_bbb) %>% mutate(junk = rating_bb + rating_b + rating_below_b)
+etf_clean = select(etf_clean1, -legal_type, -rating_us_government, 
+                 -category, -net_annual_expense_ratio_category, 
+                 -basic_materials, -consumer_cyclical, -financial_services, 
+                 -real_estate, -consumer_defensive, -healthcare, -utilities, 
+                 -communication_services, -energy, -industrials, 
+                 -technology, -rating_aaa, -rating_aa, -rating_a, 
+                 -rating_bbb, -rating_bb, -rating_b,  -rating_below_b, -rating_others,
+                 -category_return_ytd, -category_return_1month, -category_return_3months,
+                 -category_return_1year, -category_return_3years, -category_return_5years,
+                 -category_return_10years, -category_alpha_3years, -category_alpha_5years,
+                 -category_alpha_10years, -category_beta_3years, -category_beta_5years,
+                 -category_beta_10years, -category_mean_annual_return_3years,
+                 -category_mean_annual_return_5years, -category_mean_annual_return_10years,
+                 -category_r_squared_3years, -category_r_squared_5years,
+                 -category_r_squared_10years, -category_standard_deviation_3years,
+                 -category_standard_deviation_5years, -category_standard_deviation_10years,
+                 -category_sharpe_ratio_3years, -category_sharpe_ratio_5years,
+                 -category_sharpe_ratio_10years, -category_sharpe_ratio_3years, 
+                 -category_sharpe_ratio_5years, -category_sharpe_ratio_10years, 
+                 -category_treynor_ratio_3years, -category_treynor_ratio_5years,
+                 -category_treynor_ratio_10years)
+
+```
+
+```{r}
+#corr
+etf_corr = etf_clean %>% select(net_assets, ytd_return, fund_yield, portfolio_stocks, portfolio_bonds, price_earnings, price_book, price_sales, price_cashflow, fund_return_3months, fund_return_1year, fund_return_5years, fund_return_10years, fund_r_squared_3years,fund_r_squared_5years, fund_r_squared_10years, fund_standard_deviation_3years, fund_standard_deviation_5years, fund_standard_deviation_10years, fund_beta_3years, fund_beta_5years, fund_beta_10years) %>% drop_na() %>% cor()
+corrplot(etf_corr, number.cex = .01)
+```
+
+
+
+
+```{r}
+#lm
+lm1 = lm(ytd_return ~ net_assets + investment + size + price_earnings + fund_return_3months + fund_return_5years, data = etf_clean)
+
+lm1
+summary(lm1)
+```
+
+```{r}
+#elasticnet
+alphas = seq(0, 1, by = .05)
+elastic1 = cva.glmnet(ytd_return ~ ., data = etf_clean, alpha = alphas)
+
+```
+
