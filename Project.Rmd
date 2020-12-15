@@ -12,27 +12,51 @@ library('rsample')
 library('glmnet')
 library('glmnetUtils')
 library('broom')
+library(yardstick)
+library(modelr)
+library(ISLR)
+library(partykit)
+library(PerformanceAnalytics)
+library(rpart)       
+library(rpart.plot)  
+library('randomForest')
+library('sjPlot')
+library('tidymodels')
+library(randomForestExplainer)
 ```
 
 ```{r}
-etf = read.csv("Project/ETFs.csv", stringsAsFactors = TRUE)
+
+etf = read.csv("ETFs.csv", stringsAsFactors = TRUE)
+summary(etf_clean)
+describe(etf_clean)
+
+
+
 
 head(etf)
-glimpse(etf)
 options(scipen = 11)
 str(etf)
 colnames(etf)
+colSums(is.na(etf_clean))
+etf
 ```
+```{r}
+#explore
+ggplot(etf_clean, aes(net_assets, ytd_return)) + geom_point()
 
+str(etf_clean)
+```
 
 ```{r}
 #cleaning
-etf_clean1 = etf %>% drop_na(ytd_return)  %>% mutate(investment_grade = rating_aaa + rating_aa + rating_a + rating_bbb) %>% mutate(junk = rating_bb + rating_b + rating_below_b)
-etf_clean = select(etf_clean1, -legal_type, -rating_us_government, 
-                 -category, -net_annual_expense_ratio_category, 
-                 -basic_materials, -consumer_cyclical, -financial_services, 
-                 -real_estate, -consumer_defensive, -healthcare, -utilities, 
-                 -communication_services, -energy, -industrials, 
+#-basic_materials, -consumer_cyclical, -financial_services, -real_estate, -consumer_defensive, -healthcare, -utilities, -communication_services, -energy, -industrials,
+etf_clean1 = etf %>% drop_na(ytd_return, price_earnings) %>% filter(net_assets < 5000000000000)
+etf_clean = select(etf_clean1, -fund_name, -fund_family, -fund_extended_name,
+                  -legal_type, -rating_us_government, -category, -currency,
+                 -net_annual_expense_ratio_category, 
+                  -fund_return_ytd, -fund_return_1month, 
+                 -fund_return_3months, -fund_return_1year,
                  -technology, -rating_aaa, -rating_aa, -rating_a, 
                  -rating_bbb, -rating_bb, -rating_b,  -rating_below_b, -rating_others,
                  -category_return_ytd, -category_return_1month, -category_return_3months,
@@ -48,31 +72,96 @@ etf_clean = select(etf_clean1, -legal_type, -rating_us_government,
                  -category_sharpe_ratio_10years, -category_sharpe_ratio_3years, 
                  -category_sharpe_ratio_5years, -category_sharpe_ratio_10years, 
                  -category_treynor_ratio_3years, -category_treynor_ratio_5years,
-                 -category_treynor_ratio_10years)
+                 -category_treynor_ratio_10years, -fund_treynor_ratio_3years)
 
 ```
+
+
 
 ```{r}
-#corr
-etf_corr = etf_clean %>% select(net_assets, ytd_return, fund_yield, portfolio_stocks, portfolio_bonds, price_earnings, price_book, price_sales, price_cashflow, fund_return_3months, fund_return_1year, fund_return_5years, fund_return_10years, fund_r_squared_3years,fund_r_squared_5years, fund_r_squared_10years, fund_standard_deviation_3years, fund_standard_deviation_5years, fund_standard_deviation_10years, fund_beta_3years, fund_beta_5years, fund_beta_10years) %>% drop_na() %>% cor()
-corrplot(etf_corr, number.cex = .01)
+#split
+etf_prop <- 0.7
+etf_split <- initial_split(etf_clean, prop = etf_prop)
+
+etf_train <- training(etf_split)
+etf_test <- testing(etf_split)
+etf_train
 ```
-
-
-
 
 ```{r}
 #lm
-lm1 = lm(ytd_return ~ net_assets + investment + size + price_earnings + fund_return_3months + fund_return_5years, data = etf_clean)
+#fund_return_3years + fund_return_5years + fund_return_2018 + fund_return_2017 + fund_return_2016 + fund_return_2015 + fund_return_2014 + fund_return_2013  + fund_return_2011  + fund_alpha_3years
+lm1 = lm(ytd_return ~ portfolio_stocks + portfolio_bonds + price_earnings + price_cashflow + fund_return_3years + fund_return_5years + fund_return_2018 + fund_return_2017 + fund_return_2016 + basic_materials + consumer_cyclical + financial_services + real_estate + consumer_defensive + healthcare + utilities + communication_services + energy + industrials + fund_mean_annual_return_3years + fund_beta_3years + fund_sharpe_ratio_3years, data = etf_train)
 
-lm1
 summary(lm1)
+plot_model(lm1)
+tab_model(lm1)
+#predictions
+lm1_pred = predict(lm1, etf_train)
+lm1_pred
+
+lm1_results = data.frame(predicted = lm1_pred, truth = etf_train$ytd_return)
+lm1_results
+rsq(lm1_results, etf_train$ytd_return, lm1_pred)
+mse(lm1, etf_train)
+rmse(lm1, etf_train)
+
+
+
+
+?rsq
+
+lm1_pred_test = predict(lm1, etf_test)
+lm1_test = data.frame(predicted = lm1_pred_test, truth = etf_test$ytd_return)
+rsq(lm1_test, etf_test$ytd_return, lm1_pred_test)
+mse(lm1, etf_test)
 ```
+
+```{r}
+#lm2
+lm2 = lm(ytd_return ~ ., data = etf_clean, na.action = na.omit)
+summary(lm2)
+
+predict(lm2, etf_test, type = "response")
+?predict
+```
+
+
+
+
 
 ```{r}
 #elasticnet
 alphas = seq(0, 1, by = .05)
 elastic1 = cva.glmnet(ytd_return ~ ., data = etf_clean, alpha = alphas)
 
+```
+
+```{r}
+#random forest
+
+rf_fit <- randomForest(ytd_return ~ ., 
+                       data = etf_test,
+                       type = regression,
+                       mtry = 18,
+                       na.action = na.roughfix,
+                       ntree = 200, 
+                       importance = TRUE)
+
+?na.roughfix
+summary(rf_fit)
+plot(rf_fit)
+
+predict(rf_fit, etf_train, na.action = na.roughfix)
+predict
+print(rf_fit)
+varImpPlot(rf_fit, type = 1, n.var = 15, main = "Top Variables")
+importance(rf_fit)
+
+min_depth_distribution(rf_fit)
+plot_min_depth_distribution(rf_fit)
+rf_fit_pred = predict(rf_fit, etf_test, na.rm = TRUE)
+rf_fit_pred
+explain_forest(rf_fit)
 ```
 
